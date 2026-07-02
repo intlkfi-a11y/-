@@ -104,9 +104,9 @@ main{flex:1; width:100%;}
 .item-card:hover{border-color:var(--steel-light);}
 .item-main{flex:1; min-width:220px;}
 .item-title-row{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px;}
-.item-title{font-size:14px; font-weight:700; color:var(--navy);}
+.item-title{font-size:15px; font-weight:700; color:var(--navy);}
 .badge{font-size:10.5px; font-weight:700; padding:3px 9px; border-radius:20px; letter-spacing:0.01em;}
-.item-meta{font-size:12px; color:var(--slate); display:flex; gap:12px; flex-wrap:wrap;}
+.item-meta{font-size:13.5px; color:var(--slate); display:flex; gap:12px; flex-wrap:wrap; line-height:1.6;}
 .item-meta b{color:var(--ink); font-weight:600;}
 .item-desc{font-size:12px; color:var(--slate); margin-top:4px; display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; overflow:hidden;}
 .item-actions{display:flex; gap:6px; margin-left:auto;}
@@ -143,8 +143,8 @@ main{flex:1; width:100%;}
 .modal-close{background:none; border:none; font-size:18px; cursor:pointer; color:var(--slate); line-height:1;}
 
 .detail-row{margin-bottom:16px;}
-.detail-row .dlabel{font-size:11px; font-weight:700; color:var(--slate); margin-bottom:4px; letter-spacing:0.01em;}
-.detail-row .dval{font-size:13.5px; line-height:1.6; white-space:pre-wrap;}
+.detail-row .dlabel{font-size:11.5px; font-weight:700; color:var(--slate); margin-bottom:4px; letter-spacing:0.01em;}
+.detail-row .dval{font-size:14.5px; line-height:1.7; white-space:pre-wrap;}
 .detail-grid{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:16px;}
 
 .toast{position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(20px); background:var(--navy); color:var(--white); padding:11px 20px; border-radius:10px; font-size:12.5px; font-weight:600; box-shadow:0 8px 24px rgba(15,30,61,0.3); opacity:0; pointer-events:none; transition:all .25s ease; z-index:200;}
@@ -170,7 +170,7 @@ main{flex:1; width:100%;}
       <div class="brand-mark">KFI</div>
       <div class="brand-text">
         <h1>한국소방산업기술원 해외지원사업</h1>
-        <p>지원사업 공고 · 전시회 일정 관리</p>
+        <p>지원사업 공고 · 해외 주요 일정 관리</p>
       </div>
     </div>
     <button class="admin-toggle" id="adminToggleBtn" onclick="toggleAdmin()">🔒 관리자 모드</button>
@@ -183,7 +183,7 @@ main{flex:1; width:100%;}
   <div class="tab-nav-inner">
     <button class="tab-btn active" data-page="dashboard" onclick="showPage('dashboard')">📊 대시보드</button>
     <button class="tab-btn" data-page="programs" onclick="showPage('programs')">📝 지원사업</button>
-    <button class="tab-btn" data-page="expos" onclick="showPage('expos')">🌏 전시회</button>
+    <button class="tab-btn" data-page="expos" onclick="showPage('expos')">🌏 해외 주요 일정</button>
     <button class="tab-btn" data-page="admin" onclick="showPage('admin')">⚙️ 관리자</button>
   </div>
 </nav>
@@ -210,7 +210,7 @@ main{flex:1; width:100%;}
     <div class="timeline-card">
       <div class="timeline-head">
         <h3>⏱ 다가오는 일정 (D-90 이내)</h3>
-        <span class="sub">접수 마감일 · 전시회 시작일 통합</span>
+        <span class="sub">접수 마감일 · 해외일정 시작일 통합</span>
       </div>
       <div class="timeline-track" id="ddayTimeline"></div>
     </div>
@@ -238,11 +238,15 @@ main{flex:1; width:100%;}
   <!-- ================= EXPOS ================= -->
   <section class="page" id="page-expos">
     <div class="section-head">
-      <div><h2>전시회 · 일정 관리</h2><div class="sub">해외 전시회 참가 및 주요 일정</div></div>
-      <button class="btn btn-accent" id="expoAddBtn" onclick="openExpoModal()" style="display:none;">+ 전시회 등록</button>
+      <div><h2>해외 주요 일정</h2><div class="sub">전시회 · 시장개척단 등 해외 주요 일정 관리</div></div>
+      <button class="btn btn-accent" id="expoAddBtn" onclick="openExpoModal()" style="display:none;">+ 일정 등록</button>
     </div>
     <div class="toolbar">
-      <input type="text" id="expoSearch" placeholder="전시회명, 장소 검색" oninput="renderExpos()">
+      <input type="text" id="expoSearch" placeholder="일정명, 장소 검색" oninput="renderExpos()">
+      <select id="expoFilterCategory" onchange="renderExpos()">
+        <option value="">구분 전체</option>
+        <option>전시회</option><option>시장개척단</option><option>설명회</option><option>기타</option>
+      </select>
       <select id="expoFilterStatus" onchange="renderExpos()">
         <option value="">상태 전체</option>
         <option>예정</option><option>준비중</option><option>진행중</option><option>종료</option>
@@ -269,7 +273,7 @@ main{flex:1; width:100%;}
         </div>
         <div class="export-card">
           <h4>📊 Excel 내보내기</h4>
-          <p>지원사업·전시회 데이터를 시트별로 나눈 Excel 파일(.xlsx)로 다운로드합니다.</p>
+          <p>지원사업·해외일정 데이터를 시트별로 나눈 Excel 파일(.xlsx)로 다운로드합니다.</p>
           <button class="btn btn-primary btn-sm" onclick="exportExcel()">Excel 내보내기</button>
         </div>
         <div class="export-card">
@@ -286,7 +290,7 @@ main{flex:1; width:100%;}
       <div class="section-head"><h2>지원사업 데이터 관리</h2></div>
       <div class="card-list" id="adminProgList" style="margin-bottom:28px;"></div>
 
-      <div class="section-head"><h2>전시회 데이터 관리</h2></div>
+      <div class="section-head"><h2>해외 주요 일정 데이터 관리</h2></div>
       <div class="card-list" id="adminExpoList"></div>
     </div>
   </section>
@@ -308,6 +312,7 @@ main{flex:1; width:100%;}
         <div class="form-field full"><label>사업명 *</label><input type="text" id="progName" required></div>
         <div class="form-field"><label>상태</label>
           <select id="progStatus"><option>접수예정</option><option>접수중</option><option>마감</option><option>선정완료</option></select>
+          <span style="font-size:10.5px; color:var(--slate-light);">접수예정·접수중·마감은 접수기간에 따라 자동 계산됩니다. "선정완료"만 직접 선택 시 고정됩니다.</span>
         </div>
         <div class="form-field"><label>진행 장소</label><input type="text" id="progLocation" placeholder="예: 서울 코엑스 / 온라인"></div>
         <div class="form-field"><label>진행 일정 시작</label><input type="date" id="progEventStart"></div>
@@ -315,6 +320,8 @@ main{flex:1; width:100%;}
         <div class="form-field"><label>접수 시작일</label><input type="date" id="progApplyStart"></div>
         <div class="form-field"><label>접수 마감일</label><input type="date" id="progApplyEnd"></div>
         <div class="form-field full"><label>공고문 홈페이지 주소 (URL)</label><input type="text" id="progUrl" placeholder="https://..."></div>
+        <div class="form-field"><label>문의 연락처</label><input type="text" id="progContactPhone" placeholder="예: 02-1234-5678"></div>
+        <div class="form-field"><label>문의 이메일</label><input type="email" id="progContactEmail" placeholder="예: intlkfi@gmail.com"></div>
         <div class="form-field full"><label>자격조건</label><textarea id="progQualification" placeholder="예: 소방산업 관련 중소기업, 사업자등록 1년 이상 등"></textarea></div>
         <div class="form-field full"><label>지원내용</label><textarea id="progContent" placeholder="예: 인증 컨설팅 비용의 70% 지원 (최대 500만원) 등"></textarea></div>
         <div class="form-field full"><label>메모</label><textarea id="progMemo"></textarea></div>
@@ -342,13 +349,16 @@ main{flex:1; width:100%;}
 <div class="modal-backdrop" id="expoModalBackdrop">
   <div class="modal">
     <div class="modal-head">
-      <h3 id="expoModalTitle">전시회 등록</h3>
+      <h3 id="expoModalTitle">일정 등록</h3>
       <button class="modal-close" onclick="closeExpoModal()">✕</button>
     </div>
     <form onsubmit="saveExpo(event)">
       <input type="hidden" id="expoId">
       <div class="form-grid" style="padding:0; border:none; box-shadow:none; margin-bottom:0;">
-        <div class="form-field full"><label>전시회명 *</label><input type="text" id="expoName" required></div>
+        <div class="form-field full"><label>일정명 *</label><input type="text" id="expoName" required placeholder="예: INTERSCHUTZ 2026, 베트남 시장개척단"></div>
+        <div class="form-field"><label>구분</label>
+          <select id="expoCategory"><option>전시회</option><option>시장개척단</option><option>설명회</option><option>기타</option></select>
+        </div>
         <div class="form-field"><label>장소</label><input type="text" id="expoLocation" placeholder="예: 독일 하노버"></div>
         <div class="form-field"><label>상태</label>
           <select id="expoStatus"><option>예정</option><option>준비중</option><option>진행중</option><option>종료</option></select>

@@ -124,6 +124,16 @@ function toast(msg){
   window.__toastTimer = setTimeout(()=>t.classList.remove("show"), 2400);
 }
 function badge(status){ return `<span class="badge st-${status.replace(/\s/g,"")}">${status}</span>`; }
+function getEffectiveStatus(p){
+  if(p.status === "선정완료") return "선정완료";
+  if(!p.applyStart || !p.applyEnd) return p.status || "접수예정";
+  const today = new Date(); today.setHours(0,0,0,0);
+  const start = new Date(p.applyStart+"T00:00:00");
+  const end = new Date(p.applyEnd+"T00:00:00");
+  if(today < start) return "접수예정";
+  if(today > end) return "마감";
+  return "접수중";
+}
 function normalizeUrl(url){
   if(!url) return "";
   url = url.trim(); if(!url) return "";
@@ -137,9 +147,9 @@ function renderDashboard(){
   document.getElementById("dashDate").textContent = new Date().toLocaleDateString("ko-KR",{year:"numeric",month:"long",day:"numeric",weekday:"long"});
 
   const programs = state.programs, expos = state.expos;
-  const applying = programs.filter(p=>p.status==="접수중").length;
-  const closingSoon = programs.filter(p=>{ const d=daysUntil(p.applyEnd); return p.status==="접수중" && d!==null && d>=0 && d<=7; }).length;
-  const upcoming = programs.filter(p=>p.status==="접수예정").length;
+  const applying = programs.filter(p=>getEffectiveStatus(p)==="접수중").length;
+  const closingSoon = programs.filter(p=>{ const d=daysUntil(p.applyEnd); return getEffectiveStatus(p)==="접수중" && d!==null && d>=0 && d<=7; }).length;
+  const upcoming = programs.filter(p=>getEffectiveStatus(p)==="접수예정").length;
   const upcomingExpo = expos.filter(e=>e.status==="예정"||e.status==="준비중").length;
 
   const stats = [
@@ -147,7 +157,7 @@ function renderDashboard(){
     {label:"접수중", value:applying, unit:"건", accent:"var(--amber)"},
     {label:"접수마감 D-7 이내", value:closingSoon, unit:"건", accent:"var(--ember)"},
     {label:"접수예정", value:upcoming, unit:"건", accent:"var(--steel)"},
-    {label:"예정 전시회", value:upcomingExpo, unit:"건", accent:"var(--teal)"}
+    {label:"예정 해외일정", value:upcomingExpo, unit:"건", accent:"var(--teal)"}
   ];
   document.getElementById("statGrid").innerHTML = stats.map(s=>`
     <div class="stat-card" style="--accent:${s.accent}">
@@ -156,7 +166,7 @@ function renderDashboard(){
     </div>`).join("");
 
   const order = ["접수예정","접수중","마감","선정완료"];
-  const counts = order.map(st=>programs.filter(p=>p.status===st).length);
+  const counts = order.map(st=>programs.filter(p=>getEffectiveStatus(p)===st).length);
   const total = programs.length || 1;
   document.getElementById("distTotal").textContent = `총 ${programs.length}건`;
   document.getElementById("distBar").innerHTML = order.map((st,i)=>{
@@ -167,7 +177,7 @@ function renderDashboard(){
 
   const items = [];
   programs.forEach(p=>{ if(p.applyEnd){ const d=daysUntil(p.applyEnd); if(d!==null && d>=-3 && d<=90) items.push({d, title:p.name, meta:`접수 마감 · ${p.location||"-"}`, date:p.applyEnd}); }});
-  expos.forEach(e=>{ if(e.start){ const d=daysUntil(e.start); if(d!==null && d>=-3 && d<=90) items.push({d, title:e.name, meta:`전시회 시작 · ${e.location||"-"}`, date:e.start}); }});
+  expos.forEach(e=>{ if(e.start){ const d=daysUntil(e.start); if(d!==null && d>=-3 && d<=90) items.push({d, title:e.name, meta:`${e.category||"전시회"} 시작 · ${e.location||"-"}`, date:e.start}); }});
   items.sort((a,b)=>a.d-b.d);
   const tl = document.getElementById("ddayTimeline");
   tl.innerHTML = items.length ? items.map(it=>`
@@ -177,8 +187,8 @@ function renderDashboard(){
     </div>`).join("") : `<div class="tl-empty">90일 이내 예정된 일정이 없습니다.</div>`;
 
   const all = [
-    ...programs.map(p=>({...p, __type:"지원사업", __label:p.name, __sub:`${p.location||"-"} · ${p.status}`})),
-    ...expos.map(e=>({...e, __type:"전시회", __label:e.name, __sub:`${e.location||"-"} · ${e.status}`}))
+    ...programs.map(p=>({...p, status:getEffectiveStatus(p), __type:"지원사업", __label:p.name, __sub:`${p.location||"-"} · ${getEffectiveStatus(p)}`})),
+    ...expos.map(e=>({...e, __type:e.category||"해외일정", __label:e.name, __sub:`${e.location||"-"} · ${e.status}`}))
   ].slice(0,5); // 이미 updatedAt desc 정렬된 상태에서 병합
   document.getElementById("recentList").innerHTML = all.length ? all.map(it=>`
     <div class="item-card" style="cursor:default;">
@@ -194,7 +204,7 @@ function getFilteredPrograms(){
   const q = document.getElementById("progSearch").value.trim().toLowerCase();
   const status = document.getElementById("progFilterStatus").value;
   return state.programs.filter(p=>{
-    if(status && p.status!==status) return false;
+    if(status && getEffectiveStatus(p)!==status) return false;
     if(q && !(p.name.toLowerCase().includes(q) || (p.location||"").toLowerCase().includes(q))) return false;
     return true;
   }).sort((a,b)=> (a.applyEnd||"9999").localeCompare(b.applyEnd||"9999"));
@@ -204,12 +214,13 @@ function renderPrograms(){
   const list = getFilteredPrograms();
   const admin = isAdmin();
   document.getElementById("progList").innerHTML = list.length ? list.map(p=>{
+    const eff = getEffectiveStatus(p);
     const d = daysUntil(p.applyEnd);
-    const ddayTag = (p.status==="접수중"||p.status==="접수예정") && d!==null ? `<span class="badge" style="background:#EEF1F6;color:${ddayColor(d)}">${ddayLabel(d)}</span>` : "";
+    const ddayTag = (eff==="접수중"||eff==="접수예정") && d!==null ? `<span class="badge" style="background:#EEF1F6;color:${ddayColor(d)}">${ddayLabel(d)}</span>` : "";
     return `
     <div class="item-card" onclick="openProgramDetail('${p.id}')">
       <div class="item-main">
-        <div class="item-title-row"><span class="item-title">${esc(p.name)}</span>${badge(p.status)}${ddayTag}</div>
+        <div class="item-title-row"><span class="item-title">${esc(p.name)}</span>${badge(eff)}${ddayTag}</div>
         <div class="item-meta">
           <span>진행장소 <b>${esc(p.location)||"-"}</b></span>
           <span>진행일정 <b>${fmtDate(p.eventStart)} ~ ${fmtDate(p.eventEnd)}</b></span>
@@ -229,15 +240,17 @@ function openProgramDetail(id){
   const p = state.programs.find(x=>x.id===id);
   if(!p) return;
   document.getElementById("progDetailTitle").textContent = p.name;
+  const eff = getEffectiveStatus(p);
   const d = daysUntil(p.applyEnd);
   document.getElementById("progDetailBody").innerHTML = `
-    <div class="item-title-row" style="margin-bottom:16px;">${badge(p.status)}${(p.status==="접수중"||p.status==="접수예정") && d!==null ? `<span class="badge" style="background:#EEF1F6;color:${ddayColor(d)}">접수마감 ${ddayLabel(d)}</span>` : ""}</div>
+    <div class="item-title-row" style="margin-bottom:16px;">${badge(eff)}${(eff==="접수중"||eff==="접수예정") && d!==null ? `<span class="badge" style="background:#EEF1F6;color:${ddayColor(d)}">접수마감 ${ddayLabel(d)}</span>` : ""}</div>
     <div class="detail-grid">
       <div class="detail-row"><div class="dlabel">진행 일정</div><div class="dval">${fmtDate(p.eventStart)} ~ ${fmtDate(p.eventEnd)}</div></div>
       <div class="detail-row"><div class="dlabel">진행 장소</div><div class="dval">${esc(p.location)||"-"}</div></div>
       <div class="detail-row"><div class="dlabel">접수 기간</div><div class="dval">${fmtDate(p.applyStart)} ~ ${fmtDate(p.applyEnd)}</div></div>
       <div class="detail-row"><div class="dlabel">공고문</div><div class="dval">${p.url?`<button class="btn btn-link btn-sm" onclick="window.open('${normalizeUrl(p.url)}','_blank')">🔗 공고문 홈페이지 바로가기</button>`:"등록된 링크 없음"}</div></div>
     </div>
+    <div class="detail-row"><div class="dlabel">문의처</div><div class="dval">${[p.contactPhone?`☎ ${esc(p.contactPhone)}`:"", p.contactEmail?`✉ ${esc(p.contactEmail)}`:""].filter(Boolean).join("&nbsp;&nbsp;&nbsp;")||"-"}</div></div>
     <div class="detail-row"><div class="dlabel">자격조건</div><div class="dval">${esc(p.qualification)||"-"}</div></div>
     <div class="detail-row"><div class="dlabel">지원내용</div><div class="dval">${esc(p.content)||"-"}</div></div>
     ${p.memo?`<div class="detail-row"><div class="dlabel">메모</div><div class="dval">${esc(p.memo)}</div></div>`:""}
@@ -260,6 +273,8 @@ function openProgramModal(id){
   document.getElementById("progApplyStart").value = p?.applyStart || "";
   document.getElementById("progApplyEnd").value = p?.applyEnd || "";
   document.getElementById("progUrl").value = p?.url || "";
+  document.getElementById("progContactPhone").value = p?.contactPhone || "";
+  document.getElementById("progContactEmail").value = p?.contactEmail || "";
   document.getElementById("progQualification").value = p?.qualification || "";
   document.getElementById("progContent").value = p?.content || "";
   document.getElementById("progMemo").value = p?.memo || "";
@@ -279,6 +294,8 @@ function saveProgram(ev){
     applyStart: document.getElementById("progApplyStart").value,
     applyEnd: document.getElementById("progApplyEnd").value,
     url: document.getElementById("progUrl").value.trim(),
+    contactPhone: document.getElementById("progContactPhone").value.trim(),
+    contactEmail: document.getElementById("progContactEmail").value.trim(),
     qualification: document.getElementById("progQualification").value.trim(),
     content: document.getElementById("progContent").value.trim(),
     memo: document.getElementById("progMemo").value.trim(),
@@ -300,8 +317,10 @@ function deleteProgram(id){
 /* ===================== EXPOS ===================== */
 function getFilteredExpos(){
   const q = document.getElementById("expoSearch").value.trim().toLowerCase();
+  const category = document.getElementById("expoFilterCategory").value;
   const status = document.getElementById("expoFilterStatus").value;
   return state.expos.filter(e=>{
+    if(category && (e.category||"전시회")!==category) return false;
     if(status && e.status!==status) return false;
     if(q && !(e.name.toLowerCase().includes(q) || (e.location||"").toLowerCase().includes(q))) return false;
     return true;
@@ -313,7 +332,7 @@ function renderExpos(){
   document.getElementById("expoList").innerHTML = list.length ? list.map(e=>`
     <div class="item-card" style="cursor:default;">
       <div class="item-main">
-        <div class="item-title-row"><span class="item-title">${esc(e.name)}</span>${badge(e.status)}</div>
+        <div class="item-title-row"><span class="item-title">${esc(e.name)}</span>${badge(e.status)}<span class="badge" style="background:#EEF1F6;color:var(--slate)">${esc(e.category)||"전시회"}</span></div>
         <div class="item-meta">
           <span>장소 <b>${esc(e.location)||"-"}</b></span>
           <span>기간 <b>${fmtDate(e.start)} ~ ${fmtDate(e.end)}</b></span>
@@ -325,14 +344,15 @@ function renderExpos(){
         <button class="btn btn-ghost btn-sm" onclick="openExpoModal('${e.id}')">수정</button>
         <button class="btn btn-ghost btn-sm" onclick="deleteExpo('${e.id}')">삭제</button>
       </div>`:""}
-    </div>`).join("") : `<div class="empty-state">조건에 맞는 전시회가 없습니다.</div>`;
+    </div>`).join("") : `<div class="empty-state">조건에 맞는 일정이 없습니다.</div>`;
 }
 function openExpoModal(id){
   if(!isAdmin()){ toast("관리자 로그인이 필요합니다"); return; }
-  document.getElementById("expoModalTitle").textContent = id ? "전시회 정보 수정" : "전시회 등록";
+  document.getElementById("expoModalTitle").textContent = id ? "일정 정보 수정" : "일정 등록";
   document.getElementById("expoId").value = id || "";
   const e = id ? state.expos.find(x=>x.id===id) : null;
   document.getElementById("expoName").value = e?.name || "";
+  document.getElementById("expoCategory").value = e?.category || "전시회";
   document.getElementById("expoLocation").value = e?.location || "";
   document.getElementById("expoStatus").value = e?.status || "예정";
   document.getElementById("expoStart").value = e?.start || "";
@@ -348,6 +368,7 @@ function saveExpo(ev){
   const id = document.getElementById("expoId").value;
   const data = {
     name: document.getElementById("expoName").value.trim(),
+    category: document.getElementById("expoCategory").value,
     location: document.getElementById("expoLocation").value.trim(),
     status: document.getElementById("expoStatus").value,
     start: document.getElementById("expoStart").value,
@@ -379,7 +400,7 @@ function renderAdmin(){
   document.getElementById("adminProgList").innerHTML = state.programs.length ? state.programs.map(p=>`
     <div class="item-card" style="cursor:default;">
       <div class="item-main">
-        <div class="item-title-row"><span class="item-title">${esc(p.name)}</span>${badge(p.status)}</div>
+        <div class="item-title-row"><span class="item-title">${esc(p.name)}</span>${badge(getEffectiveStatus(p))}</div>
         <div class="item-meta"><span>${esc(p.location)||"-"}</span><span>접수 ${fmtDate(p.applyStart)}~${fmtDate(p.applyEnd)}</span></div>
       </div>
       <div class="item-actions">
@@ -391,14 +412,14 @@ function renderAdmin(){
   document.getElementById("adminExpoList").innerHTML = state.expos.length ? state.expos.map(e=>`
     <div class="item-card" style="cursor:default;">
       <div class="item-main">
-        <div class="item-title-row"><span class="item-title">${esc(e.name)}</span>${badge(e.status)}</div>
+        <div class="item-title-row"><span class="item-title">${esc(e.name)}</span>${badge(e.status)}<span class="badge" style="background:#EEF1F6;color:var(--slate)">${esc(e.category)||"전시회"}</span></div>
         <div class="item-meta"><span>${esc(e.location)||"-"}</span><span>${fmtDate(e.start)} ~ ${fmtDate(e.end)}</span></div>
       </div>
       <div class="item-actions">
         <button class="btn btn-ghost btn-sm" onclick="openExpoModal('${e.id}')">수정</button>
         <button class="btn btn-ghost btn-sm" onclick="deleteExpo('${e.id}')">삭제</button>
       </div>
-    </div>`).join("") : `<div class="empty-state">등록된 전시회가 없습니다. 상단 "전시회" 탭에서 추가하세요.</div>`;
+    </div>`).join("") : `<div class="empty-state">등록된 일정이 없습니다. 상단 "해외 주요 일정" 탭에서 추가하세요.</div>`;
 }
 
 /* ===================== EXPORT / IMPORT ===================== */
@@ -440,17 +461,18 @@ function importJSON(ev){
 function exportExcel(){
   const wb = XLSX.utils.book_new();
   const progSheet = XLSX.utils.json_to_sheet(state.programs.map(p=>({
-    사업명:p.name, 상태:p.status, 진행장소:p.location,
+    사업명:p.name, 상태:getEffectiveStatus(p), 진행장소:p.location,
     진행일정시작:p.eventStart, 진행일정종료:p.eventEnd,
     접수시작:p.applyStart, 접수마감:p.applyEnd,
-    공고문URL:p.url, 자격조건:p.qualification, 지원내용:p.content, 메모:p.memo
+    공고문URL:p.url, 문의연락처:p.contactPhone, 문의이메일:p.contactEmail,
+    자격조건:p.qualification, 지원내용:p.content, 메모:p.memo
   })));
   const expoSheet = XLSX.utils.json_to_sheet(state.expos.map(e=>({
-    전시회명:e.name, 장소:e.location, 상태:e.status, 시작일:e.start, 종료일:e.end,
+    전시회명:e.name, 구분:e.category||"전시회", 장소:e.location, 상태:e.status, 시작일:e.start, 종료일:e.end,
     참가기업수:e.participants, 메모:e.memo
   })));
   XLSX.utils.book_append_sheet(wb, progSheet, "지원사업");
-  XLSX.utils.book_append_sheet(wb, expoSheet, "전시회");
+  XLSX.utils.book_append_sheet(wb, expoSheet, "해외일정");
   XLSX.writeFile(wb, `KFI_해외지원사업_데이터_${todayStr()}.xlsx`);
   toast("Excel 파일이 다운로드되었습니다");
 }
