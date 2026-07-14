@@ -59,6 +59,10 @@ main{flex:1; width:100%;}
 .stat-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:28px;}
 .stat-card{background:var(--white); border:1px solid var(--border); border-radius:var(--radius); padding:16px 18px; box-shadow:var(--shadow); position:relative; overflow:hidden;}
 .stat-card::before{content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--accent, var(--steel));}
+.stat-card.clickable{cursor:pointer; transition:transform .12s ease, box-shadow .12s ease;}
+.stat-card.clickable:hover{transform:translateY(-2px); box-shadow:0 4px 16px rgba(15,30,61,0.12);}
+.stat-card.active-filter{outline:2px solid var(--ember); outline-offset:-1px;}
+.filter-chip{display:inline-flex; align-items:center; gap:6px; background:#FDEDE8; color:var(--ember); font-size:12px; font-weight:600; padding:6px 12px; border-radius:20px; margin-bottom:14px; cursor:pointer;}
 .stat-label{font-size:11.5px; color:var(--slate); font-weight:600; letter-spacing:0.01em;}
 .stat-value{font-family:var(--font-mono); font-size:26px; font-weight:700; color:var(--navy); margin-top:6px; letter-spacing:-0.02em;}
 .stat-value small{font-size:13px; font-weight:600; color:var(--slate); margin-left:2px;}
@@ -181,9 +185,11 @@ main{flex:1; width:100%;}
 
 <nav class="tab-nav">
   <div class="tab-nav-inner">
-    <button class="tab-btn active" data-page="dashboard" onclick="showPage('dashboard')">📊 대시보드</button>
+    <button class="tab-btn active" data-page="dashboard" onclick="showPage('dashboard')">🏠 홈</button>
     <button class="tab-btn" data-page="programs" onclick="showPage('programs')">📝 지원사업</button>
     <button class="tab-btn" data-page="expos" onclick="showPage('expos')">🌏 해외 주요 일정</button>
+    <button class="tab-btn" data-page="export" onclick="showPage('export')">📈 수출실적분석</button>
+    <button class="tab-btn" data-page="library" onclick="showPage('library')">🗂 자료실</button>
     <button class="tab-btn" data-page="admin" onclick="showPage('admin')">⚙️ 관리자</button>
   </div>
 </nav>
@@ -193,7 +199,7 @@ main{flex:1; width:100%;}
   <!-- ================= DASHBOARD ================= -->
   <section class="page active" id="page-dashboard">
     <div class="section-head">
-      <div><h2>대시보드</h2><div class="sub" id="dashDate"></div></div>
+      <div><h2>홈</h2><div class="sub" id="dashDate"></div></div>
     </div>
 
     <div class="stat-grid" id="statGrid"></div>
@@ -225,12 +231,10 @@ main{flex:1; width:100%;}
       <div><h2>지원사업 공고</h2><div class="sub">일정 · 접수기간 · 자격조건 · 지원내용</div></div>
       <button class="btn btn-accent" id="progAddBtn" onclick="openProgramModal()" style="display:none;">+ 지원사업 등록</button>
     </div>
+    <div class="stat-grid" id="progStatGrid" style="margin-bottom:16px;"></div>
+    <div id="progFilterChipWrap"></div>
     <div class="toolbar">
       <input type="text" id="progSearch" placeholder="사업명, 장소 검색" oninput="renderPrograms()">
-      <select id="progFilterStatus" onchange="renderPrograms()">
-        <option value="">상태 전체</option>
-        <option>접수예정</option><option>접수중</option><option>마감</option><option>선정완료</option>
-      </select>
     </div>
     <div class="card-list" id="progList"></div>
   </section>
@@ -241,6 +245,7 @@ main{flex:1; width:100%;}
       <div><h2>해외 주요 일정</h2><div class="sub">전시회 · 시장개척단 등 해외 주요 일정 관리</div></div>
       <button class="btn btn-accent" id="expoAddBtn" onclick="openExpoModal()" style="display:none;">+ 일정 등록</button>
     </div>
+    <div id="expoFilterChipWrap"></div>
     <div class="toolbar">
       <input type="text" id="expoSearch" placeholder="일정명, 장소 검색" oninput="renderExpos()">
       <select id="expoFilterCategory" onchange="renderExpos()">
@@ -253,6 +258,45 @@ main{flex:1; width:100%;}
       </select>
     </div>
     <div class="card-list" id="expoList"></div>
+  </section>
+
+  <!-- ================= EXPORT ANALYSIS (수출실적분석) ================= -->
+  <section class="page" id="page-export">
+    <div class="section-head">
+      <div><h2>수출실적분석</h2><div class="sub" id="exportUpdatedInfo">업로드된 분석 리포트 확인</div></div>
+    </div>
+    <div id="exportAdminBox" style="display:none; margin-bottom:20px;">
+      <div class="form-grid" style="margin-bottom:0;">
+        <div class="form-field full">
+          <label>HTML 리포트 파일 업로드 (.html)</label>
+          <input type="file" id="exportFileInput" accept=".html,.htm">
+        </div>
+        <div class="form-actions" style="justify-content:flex-start;">
+          <button class="btn btn-primary btn-sm" onclick="saveExportReport()">업로드 저장</button>
+          <button class="btn btn-ghost btn-sm" onclick="deleteExportReport()">현재 리포트 삭제</button>
+        </div>
+      </div>
+    </div>
+    <div id="exportViewBox">
+      <div class="empty-state" id="exportEmptyState">아직 업로드된 수출실적 분석 리포트가 없습니다.</div>
+      <iframe id="exportFrame" style="display:none; width:100%; min-height:75vh; border:1px solid var(--border); border-radius:var(--radius); background:var(--white);" sandbox="allow-scripts allow-popups"></iframe>
+    </div>
+  </section>
+
+  <!-- ================= LIBRARY (자료실) ================= -->
+  <section class="page" id="page-library">
+    <div class="section-head">
+      <div><h2>자료실</h2><div class="sub">해외 수출정보 · 지원사업 정보</div></div>
+      <button class="btn btn-accent" id="libAddBtn" onclick="openResourceModal()" style="display:none;">+ 자료 등록</button>
+    </div>
+    <div class="toolbar">
+      <input type="text" id="libSearch" placeholder="제목, 설명 검색" oninput="renderLibrary()">
+      <select id="libFilterCategory" onchange="renderLibrary()">
+        <option value="">구분 전체</option>
+        <option>해외 수출정보</option><option>지원사업 정보</option>
+      </select>
+    </div>
+    <div class="card-list" id="libList"></div>
   </section>
 
   <!-- ================= ADMIN ================= -->
@@ -369,6 +413,32 @@ main{flex:1; width:100%;}
         <div class="form-field full"><label>메모</label><textarea id="expoMemo"></textarea></div>
         <div class="form-actions">
           <button type="button" class="btn btn-ghost" onclick="closeExpoModal()">취소</button>
+          <button type="submit" class="btn btn-primary">저장</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ===== Library Resource Modal ===== -->
+<div class="modal-backdrop" id="libModalBackdrop">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="libModalTitle">자료 등록</h3>
+      <button class="modal-close" onclick="closeResourceModal()">✕</button>
+    </div>
+    <form onsubmit="saveResource(event)">
+      <input type="hidden" id="libId">
+      <div class="form-grid" style="padding:0; border:none; box-shadow:none; margin-bottom:0;">
+        <div class="form-field full"><label>제목 *</label><input type="text" id="libTitle" required></div>
+        <div class="form-field full"><label>구분</label>
+          <select id="libCategory"><option>해외 수출정보</option><option>지원사업 정보</option></select>
+        </div>
+        <div class="form-field full"><label>자료 링크 (URL)</label><input type="text" id="libUrl" placeholder="구글 드라이브 공유 링크를 그대로 붙여넣으세요"></div>
+        <div class="form-field full"><span style="font-size:10.5px; color:var(--slate-light);">구글 드라이브 링크는 자동으로 다운로드 링크로 변환됩니다. 파일 공유 설정은 "링크가 있는 모든 사용자" + "뷰어"로 해주세요.</span></div>
+        <div class="form-field full"><label>설명</label><textarea id="libDescription"></textarea></div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" onclick="closeResourceModal()">취소</button>
           <button type="submit" class="btn btn-primary">저장</button>
         </div>
       </div>

@@ -19,10 +19,12 @@ const STATUS_COLOR = {
   "예정": "#2C4A7C", "준비중": "#E8A33D", "진행중": "#2C4A7C", "종료": "#94A1B5"
 };
 
-let state = { programs: [], expos: [] };
+let state = { programs: [], expos: [], resources: [], report: null };
 let currentUser = null;
 let db = null;
 let firebaseReady = false;
+let programStatFilter = null; // null | '접수예정' | '접수중' | 'closingSoon'
+let expoStatFilter = null; // null | 'upcoming'
 
 /* ---------- Firebase init ---------- */
 function initFirebase(){
@@ -45,6 +47,16 @@ function initFirebase(){
     rerenderCurrentPage();
   }, err=>{ console.error(err); toast("전시회 데이터를 불러오지 못했습니다"); });
 
+  db.collection("resources").orderBy("updatedAt","desc").onSnapshot(snap=>{
+    state.resources = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    rerenderCurrentPage();
+  }, err=>{ console.error(err); toast("자료실 데이터를 불러오지 못했습니다"); });
+
+  db.collection("reports").doc("exportAnalysis").onSnapshot(doc=>{
+    state.report = doc.exists ? doc.data() : null;
+    rerenderCurrentPage();
+  }, err=>{ console.error(err); toast("수출실적분석 데이터를 불러오지 못했습니다"); });
+
   firebase.auth().onAuthStateChanged(user=>{
     currentUser = user;
     applyAdminUI();
@@ -56,6 +68,8 @@ function rerenderCurrentPage(){
   renderDashboard();
   if(current==="programs") renderPrograms();
   if(current==="expos") renderExpos();
+  if(current==="export") renderExportPage();
+  if(current==="library") renderLibrary();
   if(current==="admin") renderAdmin();
 }
 
@@ -68,7 +82,17 @@ function showPage(name){
   if(name==="dashboard") renderDashboard();
   if(name==="programs") renderPrograms();
   if(name==="expos") renderExpos();
+  if(name==="export") renderExportPage();
+  if(name==="library") renderLibrary();
   if(name==="admin") renderAdmin();
+}
+function goToProgramsFilter(type){
+  programStatFilter = type;
+  showPage("programs");
+}
+function goToExposFilter(type){
+  expoStatFilter = type;
+  showPage("expos");
 }
 
 /* ---------- Admin auth ---------- */
@@ -103,6 +127,8 @@ function applyAdminUI(){
   document.getElementById("adminToggleBtn").textContent = on ? `🔓 ${currentUser.email}` : "🔒 관리자 로그인";
   document.getElementById("progAddBtn").style.display = on ? "inline-flex" : "none";
   document.getElementById("expoAddBtn").style.display = on ? "inline-flex" : "none";
+  document.getElementById("libAddBtn").style.display = on ? "inline-flex" : "none";
+  document.getElementById("exportAdminBox").style.display = on ? "block" : "none";
   rerenderCurrentPage();
 }
 
@@ -140,6 +166,18 @@ function normalizeUrl(url){
   if(!/^https?:\/\//i.test(url)) url = "https://"+url;
   return url;
 }
+function toDriveDownloadUrl(url){
+  if(!url) return url;
+  // https://drive.google.com/file/d/FILE_ID/view?usp=... 형태
+  let m = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if(m) return `https://drive.google.com/uc?export=download&id=${m[1]}`;
+  // https://drive.google.com/open?id=FILE_ID 또는 ?id=FILE_ID 형태
+  if(url.includes("drive.google.com")){
+    m = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if(m) return `https://drive.google.com/uc?export=download&id=${m[1]}`;
+  }
+  return url;
+}
 function esc(str){ return (str||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 
 /* ===================== DASHBOARD ===================== */
@@ -153,14 +191,14 @@ function renderDashboard(){
   const upcomingExpo = expos.filter(e=>e.status==="예정"||e.status==="준비중").length;
 
   const stats = [
-    {label:"전체 지원사업", value:programs.length, unit:"건", accent:"var(--steel)"},
-    {label:"접수중", value:applying, unit:"건", accent:"var(--amber)"},
-    {label:"접수마감 D-7 이내", value:closingSoon, unit:"건", accent:"var(--ember)"},
-    {label:"접수예정", value:upcoming, unit:"건", accent:"var(--steel)"},
-    {label:"예정 해외일정", value:upcomingExpo, unit:"건", accent:"var(--teal)"}
+    {label:"전체 지원사업", value:programs.length, unit:"건", accent:"var(--steel)", onclick:"goToProgramsFilter(null)"},
+    {label:"접수중", value:applying, unit:"건", accent:"var(--amber)", onclick:"goToProgramsFilter('접수중')"},
+    {label:"접수마감 D-7 이내", value:closingSoon, unit:"건", accent:"var(--ember)", onclick:"goToProgramsFilter('closingSoon')"},
+    {label:"접수예정", value:upcoming, unit:"건", accent:"var(--steel)", onclick:"goToProgramsFilter('접수예정')"},
+    {label:"예정 해외일정", value:upcomingExpo, unit:"건", accent:"var(--teal)", onclick:"goToExposFilter('upcoming')"}
   ];
   document.getElementById("statGrid").innerHTML = stats.map(s=>`
-    <div class="stat-card" style="--accent:${s.accent}">
+    <div class="stat-card clickable" style="--accent:${s.accent}" onclick="${s.onclick}">
       <div class="stat-label">${s.label}</div>
       <div class="stat-value">${s.value}<small>${s.unit}</small></div>
     </div>`).join("");
@@ -202,15 +240,52 @@ function renderDashboard(){
 /* ===================== PROGRAMS (지원사업) ===================== */
 function getFilteredPrograms(){
   const q = document.getElementById("progSearch").value.trim().toLowerCase();
-  const status = document.getElementById("progFilterStatus").value;
   return state.programs.filter(p=>{
-    if(status && getEffectiveStatus(p)!==status) return false;
+    if(programStatFilter){
+      if(programStatFilter==="closingSoon"){
+        const d = daysUntil(p.applyEnd);
+        if(!(getEffectiveStatus(p)==="접수중" && d!==null && d>=0 && d<=7)) return false;
+      } else if(getEffectiveStatus(p)!==programStatFilter) return false;
+    }
     if(q && !(p.name.toLowerCase().includes(q) || (p.location||"").toLowerCase().includes(q))) return false;
     return true;
   }).sort((a,b)=> (a.applyEnd||"9999").localeCompare(b.applyEnd||"9999"));
 }
+function toggleProgramFilter(type){
+  programStatFilter = (programStatFilter===type) ? null : type;
+  renderPrograms();
+}
+function clearProgramFilter(){
+  programStatFilter = null;
+  renderPrograms();
+}
+function renderProgramTopStats(){
+  const programs = state.programs;
+  const pendingCount = programs.filter(p=>getEffectiveStatus(p)==="접수예정").length;
+  const activeCount = programs.filter(p=>getEffectiveStatus(p)==="접수중").length;
+  const cards = [
+    {key:null, label:"전체", value:programs.length, accent:"var(--steel)"},
+    {key:"접수예정", label:"접수예정", value:pendingCount, accent:"var(--steel)"},
+    {key:"접수중", label:"접수중", value:activeCount, accent:"var(--amber)"}
+  ];
+  document.getElementById("progStatGrid").innerHTML = cards.map(c=>{
+    const active = programStatFilter===c.key;
+    return `<div class="stat-card clickable ${active?'active-filter':''}" style="--accent:${c.accent}" onclick="toggleProgramFilter(${c.key?`'${c.key}'`:'null'})">
+      <div class="stat-label">${c.label}</div>
+      <div class="stat-value">${c.value}<small>건</small></div>
+    </div>`;
+  }).join("");
+}
+function renderProgramFilterChip(){
+  const wrap = document.getElementById("progFilterChipWrap");
+  if(!programStatFilter){ wrap.innerHTML=""; return; }
+  const label = programStatFilter==="closingSoon" ? "접수마감 D-7 이내" : programStatFilter;
+  wrap.innerHTML = `<div class="filter-chip" onclick="clearProgramFilter()">🔎 "${label}" 필터 적용됨 · 해제 ✕</div>`;
+}
 
 function renderPrograms(){
+  renderProgramTopStats();
+  renderProgramFilterChip();
   const list = getFilteredPrograms();
   const admin = isAdmin();
   document.getElementById("progList").innerHTML = list.length ? list.map(p=>{
@@ -320,13 +395,24 @@ function getFilteredExpos(){
   const category = document.getElementById("expoFilterCategory").value;
   const status = document.getElementById("expoFilterStatus").value;
   return state.expos.filter(e=>{
+    if(expoStatFilter==="upcoming" && !status && !(e.status==="예정"||e.status==="준비중")) return false;
     if(category && (e.category||"전시회")!==category) return false;
     if(status && e.status!==status) return false;
     if(q && !(e.name.toLowerCase().includes(q) || (e.location||"").toLowerCase().includes(q))) return false;
     return true;
   }).sort((a,b)=> (a.start||"9999").localeCompare(b.start||"9999"));
 }
+function clearExpoFilter(){
+  expoStatFilter = null;
+  renderExpos();
+}
+function renderExpoFilterChip(){
+  const wrap = document.getElementById("expoFilterChipWrap");
+  if(!expoStatFilter){ wrap.innerHTML=""; return; }
+  wrap.innerHTML = `<div class="filter-chip" onclick="clearExpoFilter()">🔎 "예정 해외일정" 필터 적용됨 · 해제 ✕</div>`;
+}
 function renderExpos(){
+  renderExpoFilterChip();
   const list = getFilteredExpos();
   const admin = isAdmin();
   document.getElementById("expoList").innerHTML = list.length ? list.map(e=>`
@@ -386,6 +472,118 @@ function deleteExpo(id){
   if(!isAdmin()){ toast("관리자 로그인이 필요합니다"); return; }
   if(!confirm("이 전시회 정보를 삭제할까요?")) return;
   db.collection("expos").doc(id).delete()
+    .then(()=>toast("삭제되었습니다"))
+    .catch(err=>toast("삭제 실패: "+err.message));
+}
+
+/* ===================== LIBRARY (자료실) ===================== */
+function getFilteredLibrary(){
+  const q = document.getElementById("libSearch").value.trim().toLowerCase();
+  const category = document.getElementById("libFilterCategory").value;
+  return state.resources.filter(r=>{
+    if(category && r.category!==category) return false;
+    if(q && !(r.title.toLowerCase().includes(q) || (r.description||"").toLowerCase().includes(q))) return false;
+    return true;
+  });
+}
+function renderLibrary(){
+  const list = getFilteredLibrary();
+  const admin = isAdmin();
+  document.getElementById("libList").innerHTML = list.length ? list.map(r=>{
+    const dlUrl = toDriveDownloadUrl(normalizeUrl(r.url));
+    return `
+    <div class="item-card" ${r.url?`onclick="window.open('${dlUrl}','_blank')"`:'style="cursor:default;"'}>
+      <div class="item-main">
+        <div class="item-title-row"><span class="item-title">${esc(r.title)}</span><span class="badge" style="background:#EEF1F6;color:var(--slate)">${esc(r.category)}</span></div>
+        ${r.description?`<div class="item-meta"><span>${esc(r.description)}</span></div>`:""}
+      </div>
+      <div class="item-actions" onclick="event.stopPropagation()">
+        ${r.url?`<button class="btn btn-link btn-sm" onclick="window.open('${dlUrl}','_blank')">⬇ 다운로드</button>`:""}
+        ${admin?`<button class="btn btn-ghost btn-sm" onclick="openResourceModal('${r.id}')">수정</button>
+        <button class="btn btn-ghost btn-sm" onclick="deleteResource('${r.id}')">삭제</button>`:""}
+      </div>
+    </div>`;
+  }).join("") : `<div class="empty-state">등록된 자료가 없습니다.</div>`;
+}
+function openResourceModal(id){
+  if(!isAdmin()){ toast("관리자 로그인이 필요합니다"); return; }
+  document.getElementById("libModalTitle").textContent = id ? "자료 수정" : "자료 등록";
+  document.getElementById("libId").value = id || "";
+  const r = id ? state.resources.find(x=>x.id===id) : null;
+  document.getElementById("libTitle").value = r?.title || "";
+  document.getElementById("libCategory").value = r?.category || "해외 수출정보";
+  document.getElementById("libUrl").value = r?.url || "";
+  document.getElementById("libDescription").value = r?.description || "";
+  document.getElementById("libModalBackdrop").classList.add("show");
+}
+function closeResourceModal(){ document.getElementById("libModalBackdrop").classList.remove("show"); }
+function saveResource(ev){
+  ev.preventDefault();
+  if(!isAdmin()){ toast("관리자 로그인이 필요합니다"); return; }
+  const id = document.getElementById("libId").value;
+  const data = {
+    title: document.getElementById("libTitle").value.trim(),
+    category: document.getElementById("libCategory").value,
+    url: document.getElementById("libUrl").value.trim(),
+    description: document.getElementById("libDescription").value.trim(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  };
+  const ref = id ? db.collection("resources").doc(id) : db.collection("resources").doc();
+  ref.set(data, {merge:true})
+    .then(()=>{ closeResourceModal(); toast("저장되었습니다"); })
+    .catch(err=>toast("저장 실패: "+err.message));
+}
+function deleteResource(id){
+  if(!isAdmin()){ toast("관리자 로그인이 필요합니다"); return; }
+  if(!confirm("이 자료를 삭제할까요?")) return;
+  db.collection("resources").doc(id).delete()
+    .then(()=>toast("삭제되었습니다"))
+    .catch(err=>toast("삭제 실패: "+err.message));
+}
+
+/* ===================== EXPORT ANALYSIS (수출실적분석) ===================== */
+function renderExportPage(){
+  const info = document.getElementById("exportUpdatedInfo");
+  const empty = document.getElementById("exportEmptyState");
+  const frame = document.getElementById("exportFrame");
+  if(state.report && state.report.html){
+    const dt = state.report.updatedAt?.toDate ? state.report.updatedAt.toDate() : null;
+    const dtStr = dt ? dt.toLocaleDateString("ko-KR",{year:"numeric",month:"long",day:"numeric"}) : "";
+    info.textContent = `${state.report.fileName||"업로드된 리포트"} · 마지막 업데이트 ${dtStr}`;
+    empty.style.display = "none";
+    frame.style.display = "block";
+    frame.srcdoc = state.report.html;
+  } else {
+    info.textContent = "업로드된 분석 리포트 확인";
+    empty.style.display = "block";
+    frame.style.display = "none";
+    frame.srcdoc = "";
+  }
+}
+function saveExportReport(){
+  if(!isAdmin()){ toast("관리자 로그인이 필요합니다"); return; }
+  const input = document.getElementById("exportFileInput");
+  const file = input.files[0];
+  if(!file){ toast("업로드할 HTML 파일을 선택해주세요"); return; }
+  const reader = new FileReader();
+  reader.onload = e=>{
+    const html = e.target.result;
+    const byteSize = new Blob([html]).size;
+    if(byteSize > 900000){
+      alert("파일 용량이 너무 큽니다 (약 900KB 이하 권장). 이미지가 포함되어 있다면 압축하거나 제거 후 다시 시도해주세요.");
+      return;
+    }
+    db.collection("reports").doc("exportAnalysis").set({
+      html, fileName: file.name, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }).then(()=>{ toast("리포트가 업로드되었습니다"); input.value=""; })
+      .catch(err=>toast("업로드 실패: "+err.message));
+  };
+  reader.readAsText(file);
+}
+function deleteExportReport(){
+  if(!isAdmin()){ toast("관리자 로그인이 필요합니다"); return; }
+  if(!confirm("현재 업로드된 리포트를 삭제할까요?")) return;
+  db.collection("reports").doc("exportAnalysis").delete()
     .then(()=>toast("삭제되었습니다"))
     .catch(err=>toast("삭제 실패: "+err.message));
 }
@@ -471,8 +669,12 @@ function exportExcel(){
     전시회명:e.name, 구분:e.category||"전시회", 장소:e.location, 상태:e.status, 시작일:e.start, 종료일:e.end,
     참가기업수:e.participants, 메모:e.memo
   })));
+  const libSheet = XLSX.utils.json_to_sheet(state.resources.map(r=>({
+    제목:r.title, 구분:r.category, 링크:r.url, 설명:r.description
+  })));
   XLSX.utils.book_append_sheet(wb, progSheet, "지원사업");
   XLSX.utils.book_append_sheet(wb, expoSheet, "해외일정");
+  XLSX.utils.book_append_sheet(wb, libSheet, "자료실");
   XLSX.writeFile(wb, `KFI_해외지원사업_데이터_${todayStr()}.xlsx`);
   toast("Excel 파일이 다운로드되었습니다");
 }
