@@ -662,7 +662,11 @@ function categoryColor(cat){
   return CAL_PALETTE[Math.abs(hash) % CAL_PALETTE.length];
 }
 function eventsOnDate(dateStr){
-  return state.calendarEvents.filter(e=>e.date===dateStr);
+  return state.calendarEvents.filter(e=>{
+    const s = e.startDate || e.date; // e.date는 이전 버전 호환용
+    const en = e.endDate || s;
+    return s && en && s<=dateStr && dateStr<=en;
+  });
 }
 function renderCalendarPage(){
   const info = document.getElementById("calUpdatedInfo");
@@ -756,18 +760,21 @@ function saveCalendarExcel(){
       const rows = XLSX.utils.sheet_to_json(ws, {defval:""});
       const events = [];
       rows.forEach(row=>{
-        const rawDate = row["날짜"];
         const title = String(row["제목"]||"").trim();
-        const dateStr = excelCellToISODate(rawDate);
-        if(!dateStr || !title) return;
+        const startRaw = row["시작일"] !== undefined && row["시작일"] !== "" ? row["시작일"] : row["날짜"];
+        const endRaw = row["종료일"];
+        const startDate = excelCellToISODate(startRaw);
+        let endDate = excelCellToISODate(endRaw);
+        if(!startDate || !title) return;
+        if(!endDate || endDate < startDate) endDate = startDate;
         events.push({
-          date: dateStr, title,
+          startDate, endDate, title,
           category: String(row["구분"]||"").trim(),
           location: String(row["장소"]||"").trim(),
           memo: String(row["메모"]||"").trim()
         });
       });
-      if(!events.length){ alert("인식 가능한 일정이 없습니다. '날짜'와 '제목' 컬럼을 확인해주세요."); return; }
+      if(!events.length){ alert("인식 가능한 일정이 없습니다. '시작일'과 '제목' 컬럼을 확인해주세요."); return; }
       const jsonSize = new Blob([JSON.stringify(events)]).size;
       if(jsonSize > 900000){ alert("데이터 용량이 너무 큽니다. 행 수를 줄여 다시 시도해주세요."); return; }
       db.collection("calendarData").doc("main").set({

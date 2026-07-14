@@ -319,7 +319,7 @@ main{flex:1; width:100%;}
         <div class="form-field full">
           <label>엑셀 파일 업로드 (.xlsx, .xls)</label>
           <input type="file" id="calFileInput" accept=".xlsx,.xls">
-          <span style="font-size:10.5px; color:var(--slate-light);">컬럼: 날짜(필수) · 제목(필수) · 구분 · 장소 · 메모. 첫 행은 헤더로 인식됩니다. 업로드하면 기존 캘린더 데이터 전체가 교체됩니다.</span>
+          <span style="font-size:10.5px; color:var(--slate-light);">컬럼: 시작일(필수) · 종료일(선택, 비우면 하루짜리 일정) · 제목(필수) · 구분 · 장소 · 메모. 첫 행은 헤더로 인식됩니다. 업로드하면 기존 캘린더 데이터 전체가 교체됩니다.</span>
         </div>
         <div class="form-actions" style="justify-content:flex-start;">
           <button class="btn btn-primary btn-sm" onclick="saveCalendarExcel()">업로드 적용</button>
