@@ -19,12 +19,14 @@ const STATUS_COLOR = {
   "예정": "#2C4A7C", "준비중": "#E8A33D", "진행중": "#2C4A7C", "종료": "#94A1B5"
 };
 
-let state = { programs: [], expos: [], resources: [], report: null };
+let state = { programs: [], expos: [], resources: [], report: null, calendarEvents: [], calendarMeta: null };
 let currentUser = null;
 let db = null;
 let firebaseReady = false;
 let programStatFilter = null; // null | '접수예정' | '접수중' | 'closingSoon'
 let expoStatFilter = null; // null | 'upcoming'
+let calendarViewDate = new Date();
+let selectedCalDate = null;
 
 /* ---------- Firebase init ---------- */
 function initFirebase(){
@@ -57,6 +59,12 @@ function initFirebase(){
     rerenderCurrentPage();
   }, err=>{ console.error(err); toast("수출실적분석 데이터를 불러오지 못했습니다"); });
 
+  db.collection("calendarData").doc("main").onSnapshot(doc=>{
+    state.calendarEvents = doc.exists ? (doc.data().events||[]) : [];
+    state.calendarMeta = doc.exists ? {fileName:doc.data().fileName, updatedAt:doc.data().updatedAt} : null;
+    rerenderCurrentPage();
+  }, err=>{ console.error(err); toast("캘린더 데이터를 불러오지 못했습니다"); });
+
   firebase.auth().onAuthStateChanged(user=>{
     currentUser = user;
     applyAdminUI();
@@ -70,6 +78,7 @@ function rerenderCurrentPage(){
   if(current==="expos") renderExpos();
   if(current==="export") renderExportPage();
   if(current==="library") renderLibrary();
+  if(current==="calendar") renderCalendarPage();
   if(current==="admin") renderAdmin();
 }
 
@@ -84,6 +93,7 @@ function showPage(name){
   if(name==="expos") renderExpos();
   if(name==="export") renderExportPage();
   if(name==="library") renderLibrary();
+  if(name==="calendar") renderCalendarPage();
   if(name==="admin") renderAdmin();
 }
 function goToProgramsFilter(type){
@@ -129,6 +139,7 @@ function applyAdminUI(){
   document.getElementById("expoAddBtn").style.display = on ? "inline-flex" : "none";
   document.getElementById("libAddBtn").style.display = on ? "inline-flex" : "none";
   document.getElementById("exportAdminBox").style.display = on ? "block" : "none";
+  document.getElementById("calAdminBox").style.display = on ? "block" : "none";
   rerenderCurrentPage();
 }
 
@@ -390,28 +401,51 @@ function deleteProgram(id){
 }
 
 /* ===================== EXPOS ===================== */
+const EXPO_CATEGORIES = ["전시회","시장개척단","설명회","간담회","기타"];
+let expoCategoryFilter = null; // null | one of EXPO_CATEGORIES
+
 function getFilteredExpos(){
   const q = document.getElementById("expoSearch").value.trim().toLowerCase();
-  const category = document.getElementById("expoFilterCategory").value;
-  const status = document.getElementById("expoFilterStatus").value;
   return state.expos.filter(e=>{
-    if(expoStatFilter==="upcoming" && !status && !(e.status==="예정"||e.status==="준비중")) return false;
-    if(category && (e.category||"전시회")!==category) return false;
-    if(status && e.status!==status) return false;
+    if(expoStatFilter==="upcoming" && !(e.status==="예정"||e.status==="준비중")) return false;
+    if(expoCategoryFilter && (e.category||"전시회")!==expoCategoryFilter) return false;
     if(q && !(e.name.toLowerCase().includes(q) || (e.location||"").toLowerCase().includes(q))) return false;
     return true;
   }).sort((a,b)=> (a.start||"9999").localeCompare(b.start||"9999"));
 }
+function toggleExpoCategoryFilter(cat){
+  expoCategoryFilter = (expoCategoryFilter===cat) ? null : cat;
+  renderExpos();
+}
 function clearExpoFilter(){
   expoStatFilter = null;
+  expoCategoryFilter = null;
   renderExpos();
+}
+function renderExpoTopStats(){
+  const expos = state.expos;
+  const cards = [
+    {key:null, label:"전체", value:expos.length, accent:"var(--steel)"},
+    ...EXPO_CATEGORIES.map(cat=>({key:cat, label:cat, value:expos.filter(e=>(e.category||"전시회")===cat).length, accent:categoryColor(cat)}))
+  ];
+  document.getElementById("expoStatGrid").innerHTML = cards.map(c=>{
+    const active = expoCategoryFilter===c.key;
+    return `<div class="stat-card clickable ${active?'active-filter':''}" style="--accent:${c.accent}" onclick="toggleExpoCategoryFilter(${c.key?`'${c.key}'`:'null'})">
+      <div class="stat-label">${c.label}</div>
+      <div class="stat-value">${c.value}<small>건</small></div>
+    </div>`;
+  }).join("");
 }
 function renderExpoFilterChip(){
   const wrap = document.getElementById("expoFilterChipWrap");
-  if(!expoStatFilter){ wrap.innerHTML=""; return; }
-  wrap.innerHTML = `<div class="filter-chip" onclick="clearExpoFilter()">🔎 "예정 해외일정" 필터 적용됨 · 해제 ✕</div>`;
+  const labels = [];
+  if(expoStatFilter==="upcoming") labels.push("예정 해외일정");
+  if(expoCategoryFilter) labels.push(expoCategoryFilter);
+  if(!labels.length){ wrap.innerHTML=""; return; }
+  wrap.innerHTML = `<div class="filter-chip" onclick="clearExpoFilter()">🔎 "${labels.join(", ")}" 필터 적용됨 · 해제 ✕</div>`;
 }
 function renderExpos(){
+  renderExpoTopStats();
   renderExpoFilterChip();
   const list = getFilteredExpos();
   const admin = isAdmin();
@@ -477,16 +511,47 @@ function deleteExpo(id){
 }
 
 /* ===================== LIBRARY (자료실) ===================== */
+const LIB_CATEGORIES = ["해외 수출정보","지원사업 정보"];
+let libCategoryFilter = null;
+
 function getFilteredLibrary(){
   const q = document.getElementById("libSearch").value.trim().toLowerCase();
-  const category = document.getElementById("libFilterCategory").value;
   return state.resources.filter(r=>{
-    if(category && r.category!==category) return false;
+    if(libCategoryFilter && r.category!==libCategoryFilter) return false;
     if(q && !(r.title.toLowerCase().includes(q) || (r.description||"").toLowerCase().includes(q))) return false;
     return true;
   });
 }
+function toggleLibraryFilter(cat){
+  libCategoryFilter = (libCategoryFilter===cat) ? null : cat;
+  renderLibrary();
+}
+function clearLibraryFilter(){
+  libCategoryFilter = null;
+  renderLibrary();
+}
+function renderLibraryTopStats(){
+  const resources = state.resources;
+  const cards = [
+    {key:null, label:"전체", value:resources.length, accent:"var(--steel)"},
+    ...LIB_CATEGORIES.map(cat=>({key:cat, label:cat, value:resources.filter(r=>r.category===cat).length, accent:categoryColor(cat)}))
+  ];
+  document.getElementById("libStatGrid").innerHTML = cards.map(c=>{
+    const active = libCategoryFilter===c.key;
+    return `<div class="stat-card clickable ${active?'active-filter':''}" style="--accent:${c.accent}" onclick="toggleLibraryFilter(${c.key?`'${c.key}'`:'null'})">
+      <div class="stat-label">${c.label}</div>
+      <div class="stat-value">${c.value}<small>건</small></div>
+    </div>`;
+  }).join("");
+}
+function renderLibraryFilterChip(){
+  const wrap = document.getElementById("libFilterChipWrap");
+  if(!libCategoryFilter){ wrap.innerHTML=""; return; }
+  wrap.innerHTML = `<div class="filter-chip" onclick="clearLibraryFilter()">🔎 "${libCategoryFilter}" 필터 적용됨 · 해제 ✕</div>`;
+}
 function renderLibrary(){
+  renderLibraryTopStats();
+  renderLibraryFilterChip();
   const list = getFilteredLibrary();
   const admin = isAdmin();
   document.getElementById("libList").innerHTML = list.length ? list.map(r=>{
@@ -584,6 +649,141 @@ function deleteExportReport(){
   if(!isAdmin()){ toast("관리자 로그인이 필요합니다"); return; }
   if(!confirm("현재 업로드된 리포트를 삭제할까요?")) return;
   db.collection("reports").doc("exportAnalysis").delete()
+    .then(()=>toast("삭제되었습니다"))
+    .catch(err=>toast("삭제 실패: "+err.message));
+}
+
+/* ===================== CALENDAR (캘린더) ===================== */
+const CAL_PALETTE = ["#2C4A7C","#1B8A6B","#E8A33D","#C4432B","#7C5CBF","#0F8B8D"];
+function categoryColor(cat){
+  if(!cat) return "var(--slate)";
+  let hash = 0;
+  for(let i=0;i<cat.length;i++) hash = cat.charCodeAt(i) + ((hash<<5)-hash);
+  return CAL_PALETTE[Math.abs(hash) % CAL_PALETTE.length];
+}
+function eventsOnDate(dateStr){
+  return state.calendarEvents.filter(e=>e.date===dateStr);
+}
+function renderCalendarPage(){
+  const info = document.getElementById("calUpdatedInfo");
+  if(state.calendarMeta){
+    const dt = state.calendarMeta.updatedAt?.toDate ? state.calendarMeta.updatedAt.toDate() : null;
+    const dtStr = dt ? dt.toLocaleDateString("ko-KR",{year:"numeric",month:"long",day:"numeric"}) : "";
+    info.textContent = `${state.calendarMeta.fileName||"업로드된 파일"} · 마지막 업데이트 ${dtStr} · 총 ${state.calendarEvents.length}건`;
+  } else {
+    info.textContent = "지원사업 · 해외 주요 일정 통합 캘린더 (업로드된 데이터 없음)";
+  }
+  renderCalendarGrid();
+  renderCalDayEvents();
+}
+function changeCalendarMonth(delta){
+  calendarViewDate.setMonth(calendarViewDate.getMonth()+delta);
+  selectedCalDate = null;
+  renderCalendarGrid();
+  renderCalDayEvents();
+}
+function selectCalDay(dateStr){
+  selectedCalDate = (selectedCalDate===dateStr) ? null : dateStr;
+  renderCalendarGrid();
+  renderCalDayEvents();
+}
+function pad2(n){ return String(n).padStart(2,"0"); }
+function renderCalendarGrid(){
+  const y = calendarViewDate.getFullYear(), m = calendarViewDate.getMonth();
+  document.getElementById("calMonthLabel").textContent = `${y}년 ${m+1}월`;
+  const firstDow = new Date(y, m, 1).getDay();
+  const daysInMonth = new Date(y, m+1, 0).getDate();
+  const todayStr = (()=>{ const t=new Date(); return `${t.getFullYear()}-${pad2(t.getMonth()+1)}-${pad2(t.getDate())}`; })();
+
+  const dows = ["일","월","화","수","목","금","토"];
+  let html = dows.map(d=>`<div class="cal-dow">${d}</div>`).join("");
+  for(let i=0;i<firstDow;i++) html += `<div class="cal-cell empty"></div>`;
+  for(let d=1; d<=daysInMonth; d++){
+    const dateStr = `${y}-${pad2(m+1)}-${pad2(d)}`;
+    const evs = eventsOnDate(dateStr);
+    const isToday = dateStr===todayStr;
+    const isSelected = dateStr===selectedCalDate;
+    const isSun = (firstDow + d - 1) % 7 === 0;
+    const dots = evs.slice(0,4).map(e=>`<span class="cal-dot" style="background:${categoryColor(e.category)}"></span>`).join("");
+    const more = evs.length>4 ? `<div class="cal-more">+${evs.length-4}</div>` : "";
+    html += `<div class="cal-cell ${isToday?'today':''} ${isSelected?'selected':''} ${isSun?'sun':''}" onclick="selectCalDay('${dateStr}')">
+      <div class="cal-daynum">${d}</div>
+      ${evs.length?`<div class="cal-dots">${dots}</div>${more}`:""}
+    </div>`;
+  }
+  document.getElementById("calGrid").innerHTML = html;
+}
+function renderCalDayEvents(){
+  const box = document.getElementById("calDayEvents");
+  if(!selectedCalDate){ box.innerHTML = ""; return; }
+  const evs = eventsOnDate(selectedCalDate);
+  const label = selectedCalDate.replace(/-/g,".");
+  box.innerHTML = `
+    <div class="cal-day-events-head">${label} 일정 ${evs.length}건</div>
+    <div class="card-list">
+      ${evs.length ? evs.map(e=>`
+        <div class="item-card" style="cursor:default;">
+          <div class="item-main">
+            <div class="item-title-row"><span class="item-title">${esc(e.title)}</span>${e.category?`<span class="badge" style="background:#EEF1F6;color:${categoryColor(e.category)}">${esc(e.category)}</span>`:""}</div>
+            <div class="item-meta">${e.location?`<span>장소 <b>${esc(e.location)}</b></span>`:""}${e.memo?`<span>${esc(e.memo)}</span>`:""}</div>
+          </div>
+        </div>`).join("") : `<div class="empty-state">이 날짜에 등록된 일정이 없습니다.</div>`}
+    </div>`;
+}
+function excelCellToISODate(v){
+  if(v instanceof Date && !isNaN(v)) return `${v.getFullYear()}-${pad2(v.getMonth()+1)}-${pad2(v.getDate())}`;
+  if(typeof v === "number"){
+    const d = XLSX.SSF.parse_date_code(v);
+    if(d) return `${d.y}-${pad2(d.m)}-${pad2(d.d)}`;
+  }
+  if(typeof v === "string"){
+    const s = v.trim().replace(/[.\/]/g,"-").replace(/-$/,"");
+    const m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if(m) return `${m[1]}-${pad2(+m[2])}-${pad2(+m[3])}`;
+  }
+  return null;
+}
+function saveCalendarExcel(){
+  if(!isAdmin()){ toast("관리자 로그인이 필요합니다"); return; }
+  const input = document.getElementById("calFileInput");
+  const file = input.files[0];
+  if(!file){ toast("업로드할 엑셀 파일을 선택해주세요"); return; }
+  const reader = new FileReader();
+  reader.onload = e=>{
+    try{
+      const wb = XLSX.read(e.target.result, {type:"array", cellDates:true});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, {defval:""});
+      const events = [];
+      rows.forEach(row=>{
+        const rawDate = row["날짜"];
+        const title = String(row["제목"]||"").trim();
+        const dateStr = excelCellToISODate(rawDate);
+        if(!dateStr || !title) return;
+        events.push({
+          date: dateStr, title,
+          category: String(row["구분"]||"").trim(),
+          location: String(row["장소"]||"").trim(),
+          memo: String(row["메모"]||"").trim()
+        });
+      });
+      if(!events.length){ alert("인식 가능한 일정이 없습니다. '날짜'와 '제목' 컬럼을 확인해주세요."); return; }
+      const jsonSize = new Blob([JSON.stringify(events)]).size;
+      if(jsonSize > 900000){ alert("데이터 용량이 너무 큽니다. 행 수를 줄여 다시 시도해주세요."); return; }
+      db.collection("calendarData").doc("main").set({
+        events, fileName: file.name, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }).then(()=>{ toast(`${events.length}건의 일정이 적용되었습니다`); input.value=""; })
+        .catch(err=>toast("업로드 실패: "+err.message));
+    }catch(err){
+      alert("엑셀 파일을 읽는 중 오류가 발생했습니다: "+err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+function deleteCalendarData(){
+  if(!isAdmin()){ toast("관리자 로그인이 필요합니다"); return; }
+  if(!confirm("캘린더에 적용된 전체 일정을 삭제할까요?")) return;
+  db.collection("calendarData").doc("main").delete()
     .then(()=>toast("삭제되었습니다"))
     .catch(err=>toast("삭제 실패: "+err.message));
 }

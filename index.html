@@ -158,6 +158,24 @@ main{flex:1; width:100%;}
 .conn-banner{background:#FBE7E2; color:var(--ember); font-size:12px; font-weight:600; text-align:center; padding:10px 16px; display:none;}
 .conn-banner.show{display:block;}
 
+.cal-controls{display:flex; align-items:center; justify-content:center; gap:16px; margin-bottom:16px;}
+.cal-nav-btn{background:var(--white); border:1px solid var(--border); border-radius:8px; padding:8px 14px; font-weight:700; font-size:13px; cursor:pointer; color:var(--navy);}
+.cal-nav-btn:hover{background:var(--mist);}
+.cal-month-label{font-size:15px; font-weight:700; color:var(--navy); min-width:120px; text-align:center;}
+.cal-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:6px; margin-bottom:20px;}
+.cal-dow{text-align:center; font-size:11px; font-weight:700; color:var(--slate); padding:4px 0 8px;}
+.cal-cell{background:var(--white); border:1px solid var(--border); border-radius:9px; min-height:78px; padding:6px; cursor:pointer; transition:border-color .15s ease, background .15s ease;}
+.cal-cell:hover{border-color:var(--steel-light);}
+.cal-cell.today{border-color:var(--ember); border-width:1.5px;}
+.cal-cell.selected{background:#EEF1F6; border-color:var(--steel);}
+.cal-cell.empty{background:transparent; border:none; cursor:default;}
+.cal-daynum{font-size:12px; font-weight:700; color:var(--ink);}
+.cal-cell.sun .cal-daynum{color:var(--ember);}
+.cal-dots{display:flex; gap:3px; flex-wrap:wrap; margin-top:6px;}
+.cal-dot{width:6px; height:6px; border-radius:50%;}
+.cal-more{font-size:9.5px; color:var(--slate); margin-top:3px;}
+.cal-day-events-head{font-size:13px; font-weight:700; margin-bottom:10px;}
+
 @media (max-width:640px){
   .tab-nav{top:60px;}
   .item-actions{margin-left:0; width:100%;}
@@ -190,6 +208,7 @@ main{flex:1; width:100%;}
     <button class="tab-btn" data-page="expos" onclick="showPage('expos')">🌏 해외 주요 일정</button>
     <button class="tab-btn" data-page="export" onclick="showPage('export')">📈 수출실적분석</button>
     <button class="tab-btn" data-page="library" onclick="showPage('library')">🗂 자료실</button>
+    <button class="tab-btn" data-page="calendar" onclick="showPage('calendar')">📅 캘린더</button>
     <button class="tab-btn" data-page="admin" onclick="showPage('admin')">⚙️ 관리자</button>
   </div>
 </nav>
@@ -245,17 +264,10 @@ main{flex:1; width:100%;}
       <div><h2>해외 주요 일정</h2><div class="sub">전시회 · 시장개척단 등 해외 주요 일정 관리</div></div>
       <button class="btn btn-accent" id="expoAddBtn" onclick="openExpoModal()" style="display:none;">+ 일정 등록</button>
     </div>
+    <div class="stat-grid" id="expoStatGrid" style="margin-bottom:16px;"></div>
     <div id="expoFilterChipWrap"></div>
     <div class="toolbar">
       <input type="text" id="expoSearch" placeholder="일정명, 장소 검색" oninput="renderExpos()">
-      <select id="expoFilterCategory" onchange="renderExpos()">
-        <option value="">구분 전체</option>
-        <option>전시회</option><option>시장개척단</option><option>설명회</option><option>기타</option>
-      </select>
-      <select id="expoFilterStatus" onchange="renderExpos()">
-        <option value="">상태 전체</option>
-        <option>예정</option><option>준비중</option><option>진행중</option><option>종료</option>
-      </select>
     </div>
     <div class="card-list" id="expoList"></div>
   </section>
@@ -289,14 +301,39 @@ main{flex:1; width:100%;}
       <div><h2>자료실</h2><div class="sub">해외 수출정보 · 지원사업 정보</div></div>
       <button class="btn btn-accent" id="libAddBtn" onclick="openResourceModal()" style="display:none;">+ 자료 등록</button>
     </div>
+    <div class="stat-grid" id="libStatGrid" style="margin-bottom:16px;"></div>
+    <div id="libFilterChipWrap"></div>
     <div class="toolbar">
       <input type="text" id="libSearch" placeholder="제목, 설명 검색" oninput="renderLibrary()">
-      <select id="libFilterCategory" onchange="renderLibrary()">
-        <option value="">구분 전체</option>
-        <option>해외 수출정보</option><option>지원사업 정보</option>
-      </select>
     </div>
     <div class="card-list" id="libList"></div>
+  </section>
+
+  <!-- ================= CALENDAR (캘린더) ================= -->
+  <section class="page" id="page-calendar">
+    <div class="section-head">
+      <div><h2>캘린더</h2><div class="sub" id="calUpdatedInfo">지원사업 · 해외 주요 일정 통합 캘린더</div></div>
+    </div>
+    <div id="calAdminBox" style="display:none; margin-bottom:20px;">
+      <div class="form-grid" style="margin-bottom:0;">
+        <div class="form-field full">
+          <label>엑셀 파일 업로드 (.xlsx, .xls)</label>
+          <input type="file" id="calFileInput" accept=".xlsx,.xls">
+          <span style="font-size:10.5px; color:var(--slate-light);">컬럼: 날짜(필수) · 제목(필수) · 구분 · 장소 · 메모. 첫 행은 헤더로 인식됩니다. 업로드하면 기존 캘린더 데이터 전체가 교체됩니다.</span>
+        </div>
+        <div class="form-actions" style="justify-content:flex-start;">
+          <button class="btn btn-primary btn-sm" onclick="saveCalendarExcel()">업로드 적용</button>
+          <button class="btn btn-ghost btn-sm" onclick="deleteCalendarData()">전체 삭제</button>
+        </div>
+      </div>
+    </div>
+    <div class="cal-controls">
+      <button class="cal-nav-btn" onclick="changeCalendarMonth(-1)">◀ 이전달</button>
+      <div class="cal-month-label" id="calMonthLabel"></div>
+      <button class="cal-nav-btn" onclick="changeCalendarMonth(1)">다음달 ▶</button>
+    </div>
+    <div class="cal-grid" id="calGrid"></div>
+    <div id="calDayEvents"></div>
   </section>
 
   <!-- ================= ADMIN ================= -->
@@ -401,7 +438,7 @@ main{flex:1; width:100%;}
       <div class="form-grid" style="padding:0; border:none; box-shadow:none; margin-bottom:0;">
         <div class="form-field full"><label>일정명 *</label><input type="text" id="expoName" required placeholder="예: INTERSCHUTZ 2026, 베트남 시장개척단"></div>
         <div class="form-field"><label>구분</label>
-          <select id="expoCategory"><option>전시회</option><option>시장개척단</option><option>설명회</option><option>기타</option></select>
+          <select id="expoCategory"><option>전시회</option><option>시장개척단</option><option>설명회</option><option>간담회</option><option>기타</option></select>
         </div>
         <div class="form-field"><label>장소</label><input type="text" id="expoLocation" placeholder="예: 독일 하노버"></div>
         <div class="form-field"><label>상태</label>
