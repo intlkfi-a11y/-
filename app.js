@@ -708,11 +708,11 @@ function renderCalendarGrid(){
     const isToday = dateStr===todayStr;
     const isSelected = dateStr===selectedCalDate;
     const isSun = (firstDow + d - 1) % 7 === 0;
-    const dots = evs.slice(0,4).map(e=>`<span class="cal-dot" style="background:${categoryColor(e.category)}"></span>`).join("");
-    const more = evs.length>4 ? `<div class="cal-more">+${evs.length-4}</div>` : "";
+    const pills = evs.slice(0,3).map(e=>`<div class="cal-event-pill" style="background:${categoryColor(e.category)}" title="${esc(e.title)}">${esc(e.title)}</div>`).join("");
+    const more = evs.length>3 ? `<div class="cal-more">+${evs.length-3}건 더보기</div>` : "";
     html += `<div class="cal-cell ${isToday?'today':''} ${isSelected?'selected':''} ${isSun?'sun':''}" onclick="selectCalDay('${dateStr}')">
       <div class="cal-daynum">${d}</div>
-      ${evs.length?`<div class="cal-dots">${dots}</div>${more}`:""}
+      ${evs.length?`<div class="cal-events">${pills}</div>${more}`:""}
     </div>`;
   }
   document.getElementById("calGrid").innerHTML = html;
